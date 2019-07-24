@@ -239,7 +239,6 @@ void Observer::operate() {
     rgb_avg_b_new /= RGB_COMP_LEN;
 
     // determine blue when being on the line
-    /*
     if (!lost_flag) {
         if (result && !blue_flag && check_blue()) {
             syslog(LOG_NOTICE, "%08u, line color changed black to blue", clock->now());
@@ -257,7 +256,6 @@ void Observer::operate() {
             //captain->decide(EVT_bl2bk);
         }
     }
-    */
 
     // display trace message in every PERIOD_TRACE_MSG ms */
     if (++traceCnt * PERIOD_OBS_TSK >= PERIOD_TRACE_MSG) {
