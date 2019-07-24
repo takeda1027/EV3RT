@@ -34,8 +34,12 @@ using namespace ev3api;
 #define LIGHT_BLACK           3  /* 黒色の光センサ値 */
 #define HSV_V_WHITE         100
 #define HSV_V_LOST           90  // threshold to determine "line lost"
+#define HSV_V_FOUND          60  // threshold to determine "line found"
+// Note that lost_flag does NOT flip when between HSV_V_LOST and HSV_V_FOUND
 #define HSV_V_BLACK           0
 #define HSV_V_BLUE           35
+#define RGB_HIST_ARRAY_SIZE  30
+#define RGB_COMP_LEN         10
 #define FINAL_APPROACH_LEN  100  // final approch length in milimater
 #define SONAR_ALERT_DISTANCE 30  /* 超音波センサによる障害物検知距離[cm] */
 #define TAIL_ANGLE_STAND_UP  90  /* 完全停止時の角度[度] */
@@ -127,7 +131,7 @@ const char eventName[][EVT_NAME_LEN] = {
 #define CALIB_FONT_WIDTH (6/*TODO: magic number*/)
 #define CALIB_FONT_HEIGHT (8/*TODO: magic number*/)
 
-#define PERIOD_TRACE_MSG    1000    /* Trace message in every 1000 ms */
+#define PERIOD_TRACE_MSG    500    /* Trace message in every 1000 ms */
 #define M_2PI    (2.0 * M_PI)
 
 class Radioman {
@@ -153,11 +157,16 @@ private:
     rgb_raw_t cur_rgb;
     hsv_raw_t cur_hsv;
     bool touch_flag, sonar_flag, backButton_flag, lost_flag, blue_flag;
+    uint16_t rgb_hist_r[RGB_HIST_ARRAY_SIZE], rgb_hist_b[RGB_HIST_ARRAY_SIZE];
+    long double rgb_avg_r_new, rgb_avg_r_old, rgb_avg_b_new, rgb_avg_b_old;
+    int rgb_hist_index;
     bool check_touch(void);
     bool check_sonar(void);
     bool check_backButton(void);
     bool check_lost(void);
+    bool check_found(void);
     bool check_blue(void);
+    bool check_black(void);
 protected:
 public:
     Observer();

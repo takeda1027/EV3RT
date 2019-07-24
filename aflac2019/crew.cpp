@@ -77,6 +77,7 @@ Observer::Observer(Motor* lm, Motor* rm, TouchSensor* ts, SonarSensor* ss, GyroS
     sonar_flag = false;
     backButton_flag = false;
     lost_flag = false;
+    rgb_hist_index = 0;
 }
 
 void Observer::goOnDuty() {
@@ -139,6 +140,10 @@ void Observer::operate() {
     locX += (deltaDist * sin(azimuth));
     locY += (deltaDist * cos(azimuth));
 
+    // get color
+    colorSensor->getRawColor(cur_rgb);
+    rgb_to_hsv(cur_rgb, cur_hsv);
+
     // monitor distance
     if ((notifyDistance != 0.0) && (distance > notifyDistance)) {
         syslog(LOG_NOTICE, "%08u, distance reached", clock->now());
@@ -182,34 +187,73 @@ void Observer::operate() {
         captain->decide(EVT_backButton_Off);
     }
 
-    // monitor color sensor
-    //
-    // Note:
-    //   check_blue() must be invoked after check_lost()
-    //   as cur_rgb and cur_hsv are set by check_lost()
-    //
     // determine if still tracing the line
-    result = check_lost();
-    if (result && !lost_flag) {
+    if (!lost_flag && check_lost()) {
         syslog(LOG_NOTICE, "%08u, line lost", clock->now());
         lost_flag = true;
         captain->decide(EVT_line_lost);
-    } else if (!result && lost_flag) {
+    } else if (lost_flag && check_found()) {
         syslog(LOG_NOTICE, "%08u, line found", clock->now());
         lost_flag = false;
         captain->decide(EVT_line_found);
     }
+
+    // when tracing, memorize the most recent RGB_HIST_ARRAY_SIZE of cur_rgb
+    if (!lost_flag && (++rgb_hist_index >= RGB_HIST_ARRAY_SIZE)) {
+        rgb_hist_index = 0;
+    }
+    rgb_hist_r[rgb_hist_index] = cur_rgb.r;
+    rgb_hist_b[rgb_hist_index] = cur_rgb.b;
+
+    // calculate average of the oldest RGB_COMP_LEN samples
+    // and also of the newest for comparison
+    rgb_avg_r_old = 0.0;
+    rgb_avg_b_old = 0.0;
+    rgb_avg_r_new = 0.0;
+    rgb_avg_b_new = 0.0;
+    // average of the oldest
+    for (int i = rgb_hist_index + 1; i < rgb_hist_index + RGB_COMP_LEN + 1; i++) {
+        int index;
+        if (i >= RGB_HIST_ARRAY_SIZE) {
+            index = i - RGB_HIST_ARRAY_SIZE; // wrap around the array
+        } else {
+            index = i;
+        }
+        rgb_avg_r_old += rgb_hist_r[index];
+        rgb_avg_b_old += rgb_hist_b[index];
+    }
+    rgb_avg_r_old /= RGB_COMP_LEN;
+    rgb_avg_b_old /= RGB_COMP_LEN;
+    // average of the newest
+    for (int i = rgb_hist_index; i > rgb_hist_index - RGB_COMP_LEN; i--) {
+        int index;
+        if (i < 0) {
+            index = RGB_HIST_ARRAY_SIZE + i; // wrap around the array
+        } else {
+            index = i;
+        }
+        rgb_avg_r_new += rgb_hist_r[index];
+        rgb_avg_b_new += rgb_hist_b[index];
+    }
+    rgb_avg_r_new /= RGB_COMP_LEN;
+    rgb_avg_b_new /= RGB_COMP_LEN;
+
     // determine blue when being on the line
     if (!lost_flag) {
-        result = check_blue();
-        if (result && !blue_flag) {
+        if (result && !blue_flag && check_blue()) {
             syslog(LOG_NOTICE, "%08u, line color changed black to blue", clock->now());
+            _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): hsv = (%03u, %03u, %03u)", clock->now(), cur_hsv.h, cur_hsv.s, cur_hsv.v));
+            _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): rgb = (%03u, %03u, %03u)", clock->now(), cur_rgb.r, cur_rgb.g, cur_rgb.b));
+            _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): rb old/new = (%03u, %03u, %03u, %03u)", clock->now(), rgb_avg_r_old, rgb_avg_b_old, rgb_avg_r_new, rgb_avg_b_new));
             blue_flag = true;
-            captain->decide(EVT_bk2bl);
-        } else if (!result && blue_flag) {
+            //captain->decide(EVT_bk2bl);
+        } else if (blue_flag && check_black()) {
             syslog(LOG_NOTICE, "%08u, line color changed blue to black", clock->now());
-            blue_flag = false;
-            captain->decide(EVT_bl2bk);
+            _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): hsv = (%03u, %03u, %03u)", clock->now(), cur_hsv.h, cur_hsv.s, cur_hsv.v));
+            _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): rgb = (%03u, %03u, %03u)", clock->now(), cur_rgb.r, cur_rgb.g, cur_rgb.b));
+            _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): rb old/new = (%03u, %03u, %03u, %03u)", clock->now(), rgb_avg_r_old, rgb_avg_b_old, rgb_avg_r_new, rgb_avg_b_new));
+           blue_flag = false;
+            //captain->decide(EVT_bl2bk);
         }
     }
 
@@ -219,7 +263,8 @@ void Observer::operate() {
         _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): distance = %d, azimuth = %d, x = %d, y = %d", clock->now(), getDistance(), getAzimuth(), getLocX(), getLocY()));
         _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): hsv = (%03u, %03u, %03u)", clock->now(), cur_hsv.h, cur_hsv.s, cur_hsv.v));
         _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): rgb = (%03u, %03u, %03u)", clock->now(), cur_rgb.r, cur_rgb.g, cur_rgb.b));
-        
+        _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): rb old/new = (%03u, %03u, %03u, %03u)", clock->now(), rgb_avg_r_old, rgb_avg_b_old, rgb_avg_r_new, rgb_avg_b_new));
+
         int16_t angle = gyroSensor->getAngle();
         int16_t anglerVelocity = gyroSensor->getAnglerVelocity();
         _debug(syslog(LOG_NOTICE, "%08u, Observer::operate(): angle = %d, anglerVelocity = %d", clock->now(), angle, anglerVelocity));
@@ -259,8 +304,6 @@ bool Observer::check_backButton(void) {
 }
 
 bool Observer::check_lost(void) {
-    colorSensor->getRawColor(cur_rgb);
-    rgb_to_hsv(cur_rgb, cur_hsv);
     if (cur_hsv.v > HSV_V_LOST) {
         return true;
     } else {
@@ -268,11 +311,24 @@ bool Observer::check_lost(void) {
     }
 }
 
+bool Observer::check_found(void) {
+    if (cur_hsv.v < HSV_V_FOUND) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 bool Observer::check_blue(void) {
-    // assuming that cur_rgb and cur_hsv are already set
-    //colorSensor->getRawColor(cur_rgb);
-    //rgb_to_hsv(cur_rgb, cur_hsv);
-    if (cur_rgb.b > cur_rgb.r && cur_hsv.v > HSV_V_BLUE) {
+    if (rgb_avg_r_new < rgb_avg_r_old && rgb_avg_b_new > rgb_avg_b_old) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool Observer::check_black(void) {
+    if (rgb_avg_r_new > rgb_avg_r_old && rgb_avg_b_new < rgb_avg_b_old) {
         return true;
     } else {
         return false;
@@ -419,7 +475,7 @@ void LineTracer::operate() {
     if (frozen) {
         forward = turn = 0; /* 障害物を検知したら停止 */
     } else {
-        forward = 30; //前進命令
+        forward = 15; //前進命令  Changed from 30 to 15 as tuning on July 23
         /*
         // on-off control
         if (colorSensor->getBrightness() >= (LIGHT_WHITE + LIGHT_BLACK)/2) {
@@ -439,13 +495,12 @@ void LineTracer::operate() {
         colorSensor->getRawColor(cur_rgb);
         rgb_to_hsv(cur_rgb, cur_hsv);
         int16_t sensor = cur_hsv.v;
-        //int16_t target = (HSV_V_BLUE + HSV_V_WHITE)/2;
-        int16_t target = (HSV_V_BLACK + HSV_V_WHITE)/2;
+        int16_t target = (HSV_V_BLACK + HSV_V_WHITE)/4;  // devisor changed from 2 to 4 as tuning on July 23
 
-        if (state == ST_tracing_L || state == ST_stopping_L || state == ST_dancing) {
+        if (state == ST_tracing_L || state == ST_stopping_L || state == ST_crimbing) {
             turn = computePID(sensor, target);
         } else {
-            // state == ST_tracing_R || state == ST_stopping_R || state == ST_crimbing
+            // state == ST_tracing_R || state == ST_stopping_R || state == ST_dancing
             turn = (-1) * computePID(sensor, target);
         }
     }
