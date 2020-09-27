@@ -38,7 +38,6 @@
 #include "Steering.h"
 #include "Clock.h"
 using namespace ev3api;
-#include "utility.hpp"
 
 /* 下記のマクロは個体/環境に合わせて変更する必要があります */
 #define GYRO_OFFSET           0  /* ジャイロセンサオフセット値(角速度0[deg/sec]時) */
@@ -55,16 +54,30 @@ using namespace ev3api;
 
 #define TIRE_DIAMETER    100.0F  // diameter of tire in milimater
 #define WHEEL_TREAD      150.0F  // distance between the right and left wheels
-//#define P_CONST           0.38D  // PID constants determined by Ultimate Gain method
-//#define I_CONST           0.06D
-//#define D_CONST          0.027D
-#define P_CONST           0.46D  // PID constants determined by Ultimate Gain method
-#define I_CONST     0.00000013D
-#define D_CONST          0.075D
-#define SPEED_NORM           45
+//#define P_CONST            0.4D  // PID constants determined by Ultimate Gain method
+//#define I_CONST            0.0D
+//#define D_CONST            0.0D
+
+
+// #define P_CONST           0.46D  // PID constants determined by Ultimate Gain method
+// #define I_CONST     0.00000013D sano_t
+// #define D_CONST          0.075D //sano_t
+#define P_CONST           0.85D
+#define I_CONST            0.0000001D
+#define D_CONST            0.5D
+//#define SPEED_NORM           50
+#define GS_TARGET            47
+
+
+#define SPEED_NORM           50
+#define SPEED_SLOW           30
+#define SPEED_RECOVER        10
+#define SPEED_BLIND          75
 #define TURN_MIN            -16  // minimum value PID calculator returns
 #define TURN_MAX             16  // maximum value PID calculator returns
-#define GS_TARGET            45
+
+
+//#define GS_TARGET            45 //sano_t
 
 #define M_2PI    (2.0 * M_PI)
 
@@ -83,6 +96,8 @@ using namespace ev3api;
 #define ST_blind        2
 #define ST_stopping     3
 #define ST_end          4
+#define ST_slalom 5
+#define ST_block  6
 
 #define ST_NAME_LEN     20  // maximum number of characters for a machine state name
 const char stateName[][ST_NAME_LEN] = {
@@ -90,7 +105,9 @@ const char stateName[][ST_NAME_LEN] = {
     "ST_tracing",
     "ST_blind",
     "ST_stopping",
-    "ST_end"
+    "ST_end",
+    "ST_slalom",
+    "ST_block"
 };
 
 // event
@@ -110,7 +127,13 @@ const char stateName[][ST_NAME_LEN] = {
 #define EVT_dist_reached    13
 #define EVT_tilt            14
 
-#define EVT_NAME_LEN        20  // maximum number of characters for an event name
+#define EVT_slalom_reached  15
+#define EVT_slalom_challenge    16
+#define EVT_block_challenge 17
+#define EVT_block_area_in   18
+#define EVT_line_on_pid_cntl    19
+#define EVT_line_on_p_cntl  20
+#define EVT_NAME_LEN        21  // maximum number of characters for an event name
 const char eventName[][EVT_NAME_LEN] = {
     "EVT_cmdStart_L",
     "EVT_cmdStart_R",
@@ -126,14 +149,38 @@ const char eventName[][EVT_NAME_LEN] = {
     "EVT_line_lost",
     "EVT_line_found",
     "EVT_dist_reached",
-    "EVT_tilt"
+    "EVT_tilt",
+    "EVT_slalom_reached",
+    "EVT_slalom_challenge",
+    "EVT_block_challenge",
+    "EVT_block_area_in",
+    "EVT_line_on_pid_cntl",
+    "EVT_line_on_p_cntl"
 };
+
+typedef struct {
+    uint16_t h; // Hue
+    uint16_t s; // Saturation
+    uint16_t v; // Value of brightness  
+} hsv_raw_t;
+
+// pwmSetMode
+#define Mode_speed_constant     1
+#define Mode_speed_increaseL    2
+#define Mode_speed_decreaseL    3
+#define Mode_speed_increaseR    4
+#define Mode_speed_decreaseR    5
+#define Mode_speed_increaseLR   6
+#define Mode_speed_decreaseLR   7
+#define Mode_speed_incrsLdcrsR  8
+#define Mode_speed_incrsRdcrsL  9
 
 // global variables
 extern rgb_raw_t g_rgb;
 extern hsv_raw_t g_hsv;
 extern int16_t g_grayScale, g_grayScaleBlueless;
 extern int16_t g_angle, g_anglerVelocity;
+extern int16_t g_challenge_stepNo,g_color_brightness; //sano
 
 extern Clock*       clock;
 extern uint8_t      state;

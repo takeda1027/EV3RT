@@ -10,6 +10,7 @@
 
 #include "aflac_common.hpp"
 #include "BlindRunner.hpp"
+#include "ChallengeRunner.hpp"
 
 /* LCDフォントサイズ */
 #define CALIB_FONT (EV3_FONT_SMALL)
@@ -25,9 +26,11 @@ private:
     Motor*          leftMotor;
     Motor*          rightMotor;
     Motor*          tailMotor;
+    Motor*          armMotor;
     Steering*       steering;
     LineTracer*     lineTracer;
     BlindRunner*    blindRunner;
+    ChallengeRunner*    challengeRunner;
 protected:
 public:
     StateMachine();

@@ -8,6 +8,7 @@ Observer.o \
 Navigator.o \
 LineTracer.o \
 BlindRunner.o \
+ChallengeRunner.o \
 utility.o
 
 SRCLANG := c++

@@ -9,6 +9,7 @@
 #define Observer_hpp
 
 #include "aflac_common.hpp"
+#include "utility.hpp"
 
 #define OLT_SKIP_PERIOD    1000 * 1000 // period to skip outlier test in miliseconds
 #define OLT_INIT_PERIOD    3000 * 1000 // period before starting outlier test in miliseconds
@@ -21,19 +22,28 @@ const double hn[FIR_ORDER+1] = { -1.247414986406201e-18, -1.270350182429102e-02,
 // moving average parameter
 const int MA_CAP = 10;
 
+// Calculating average difference of Right/Left motor at initial straight parameters
+const int AVERAGE_START =  350;
+const int AVERAGE_END   = 1500;
+
 class Observer {
 private:
     Motor*          leftMotor;
     Motor*          rightMotor;
+    Motor*          armMotor;
+    Motor*          tailMotor;
     TouchSensor*    touchSensor;
     SonarSensor*    sonarSensor;
     GyroSensor*     gyroSensor;
     ColorSensor*    colorSensor;
-    double distance, azimuth, locX, locY;
-    int16_t traceCnt, prevGS;
-    int32_t prevAngL, prevAngR, notifyDistance, gsDiff, timeDiff;
+    double distance, azimuth, locX, locY, aveDiffAng, deltaDiff, prevDeltaDiff, prevDis, prevDisX, prevDisY;
+    double integD, integDL, integDR;
+    int8_t process_count,roots_no;
+    int16_t traceCnt, prevGS, curRgbSum, prevRgbSum, curAngle, prevAngle, curDegree180, prevDegree180,curDegree360, prevDegree360,cntDegree,turnDegree;
+    int32_t prevAngL, prevAngR, notifyDistance, gsDiff, timeDiff, sonarDistance, diffAng, sumDiffAng, countAng;
     uint64_t curTime, prevTime;
-    bool touch_flag, sonar_flag, backButton_flag, lost_flag, frozen, blue_flag;
+    bool touch_flag, sonar_flag, backButton_flag, lost_flag, frozen, blue_flag, blue2_flg, slalom_flg, line_over_flg, move_back_flg,garage_flg;
+
     rgb_raw_t cur_rgb;
     hsv_raw_t cur_hsv;
     FIR_Transposed<FIR_ORDER> *fir_r, *fir_g, *fir_b;
@@ -44,18 +54,23 @@ private:
 
     bool check_touch(void);
     bool check_sonar(void);
+    bool check_sonar(int16_t sonar_alert_dist_from, int16_t sonar_alert_dist_to);
     bool check_backButton(void);
     bool check_lost(void);
     bool check_tilt(void);
+    int16_t getTurnDgree(int16_t prev_x,int16_t x);
+    
 protected:
 public:
     Observer();
-    Observer(Motor* lm, Motor* rm, TouchSensor* ts, SonarSensor* ss, GyroSensor* gs, ColorSensor* cs);
+    Observer(Motor* lm, Motor* rm, Motor* am, Motor* tm, TouchSensor* ts, SonarSensor* ss, GyroSensor* gs, ColorSensor* cs);
     void activate();
     void reset();
     void notifyOfDistance(int32_t delta);
     int32_t getDistance();
+    int32_t getSonarDistance();
     int16_t getAzimuth();
+    int16_t getDegree();
     int32_t getLocX();
     int32_t getLocY();
     void operate(); // method to invoke from the cyclic handler
