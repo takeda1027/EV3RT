@@ -94,7 +94,7 @@ void LineTracer::setCntlP(bool p) {
 
 float LineTracer::calcPropP() {
   const float Kp = 0.83;
-  const int target = 18;
+  const int target = 8;
   const int bias = 0;
   
   int diff = g_color_brightness - target; 
